@@ -1,4 +1,4 @@
-# Multi-Task Learning in codemix environment
+# Multi-Task Learning in codemix/codeswitch environment
 
 
 ## Project Structure
