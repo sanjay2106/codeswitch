@@ -1,10 +1,11 @@
 import os 
 import torch 
+#PATH OF THE DATASET AND LABEL2ID TO BE REPLACED WITH POS
 
 # PATHS 
-PATH_LINCE_DATASET = os.environ.get("PATH_LINCE_DATASET", "./data/lince/ner")
+PATH_LINCE_DATASET = os.environ.get("PATH_LINCE_DATASET", "./data/lince/pos")  #assumed paths of pos 
 PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
-PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
+PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_POS_DATASET", "./data/GLUECoS/POS/Romanized")
 PATH_BASE_MODELS = os.environ.get("PATH_BASE_MODELS", "./base_models")
 PATH_CACHE_DATASET = os.environ.get("PATH_CACHE_DATASET", "./data/cache")
 
@@ -29,7 +30,7 @@ DROPOUT_RATE = 1e-3
 BASE_MODEL = "bert-base-multilingual-cased"       # mBERT
 MAX_SEQUENCE_LENGTH = 64
 PADDING = "max_length"
-
+#label2id of pos required
 LABEL2ID = {
     "O": 0, 
     "B-PERSON": 1, 
