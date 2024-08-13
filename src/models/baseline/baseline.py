@@ -97,7 +97,7 @@ class BaseLine(pl.LightningModule):
             batch_first=True
         )
 
-        self.weighted_loss = MultiTaskLossWrapper(num_tasks=2)     # LID and NER: two tasks
+        self.weighted_loss = MultiTaskLossWrapper(num_tasks=2)     # LID and POS: two tasks
 
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
@@ -137,7 +137,7 @@ class BaseLine(pl.LightningModule):
 
         # TODO: Weighted Loss
         # Simply summing loss for now 
-        # loss = ner_loss + lid_loss 
+        # loss = pos_loss + lid_loss 
         
         loss = self.weighted_loss(pos_loss, lid_loss)
 
