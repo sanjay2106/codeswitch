@@ -35,11 +35,11 @@ class BaseLine(pl.LightningModule):
         label2id: dict = LABEL2ID,
         lid2id: dict = LID2ID,
         learning_rate: float = LEARNING_RATE, 
-        ner_learning_rate: float = LEARNING_RATE,
+        pos_learning_rate: float = LEARNING_RATE,  #pos learning rate 
         lid_learning_rate: float = LEARNING_RATE,
         warm_restart_epochs: int = WARM_RESTARTS,
         weight_decay: float = WEIGHT_DECAY,
-        ner_wd: float = WEIGHT_DECAY,
+        pos_wd: float = WEIGHT_DECAY,   #pos weight decay
         lid_wd: float = WEIGHT_DECAY,
         dropout_rate: float = DROPOUT_RATE,
         freeze: bool = False
@@ -49,7 +49,7 @@ class BaseLine(pl.LightningModule):
         self.save_hyperparameters()
 
         self.lid_pad_token_label = len(self.hparams.lid2id)
-        self.ner_pad_token_label = len(self.hparams.label2id)
+        self.pos_pad_token_label = len(self.hparams.label2id)   #pos
 
         # Shared params
         self.base_model = BaseModel(self.hparams.model_name)
@@ -74,16 +74,17 @@ class BaseLine(pl.LightningModule):
             nn.GELU()
         )
         
-        # NER Task params
-        self.ner_net = nn.Sequential(
-            nn.Linear(32, len(self.hparams.label2id) + 1), 
-            nn.LayerNorm(len(self.hparams.label2id) + 1),
+        # pos Task params
+        self.pos_net = nn.Sequential(
+             nn.Linear(32, len(self.hparams.pos_label2id) + 1), 
+            nn.LayerNorm(len(self.hparams.pos_label2id) + 1),
         )
 
-        self.ner_crf = CRF(
-            num_tags=len(self.hparams.label2id) + 1,
-            batch_first=True
+       self.pos_crf = CRF(
+       num_tags=len(self.hparams.pos_label2id) + 1,
+       batch_first=True
         )
+
 
         # LID Task params 
         self.lid_net = nn.Sequential(
@@ -109,13 +110,13 @@ class BaseLine(pl.LightningModule):
         lstm_outs, _ = self.bi_lstm(base_outs)
         shared_net_outs = self.shared_net(lstm_outs)
 
-        # NER 
-        ner_net_outs = self.ner_net(shared_net_outs)
+        # POS
+        pos_net_outs = self.ner_net(shared_net_outs)
 
         # LID
         lid_net_outs = self.lid_net(shared_net_outs)
 
-        return ner_net_outs, lid_net_outs
+        return pos_net_outs, lid_net_outs
     
     def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
         input_ids = batch['input_ids']
@@ -123,13 +124,13 @@ class BaseLine(pl.LightningModule):
         labels = batch['labels']
         lids = batch['lids']
 
-        ner_emissions, lid_emissions = self(input_ids, attention_mask)
+        pos_emissions, lid_emissions = self(input_ids, attention_mask)  #pos
 
-        ner_loss = -self.ner_crf(ner_emissions, labels, attention_mask.bool())
+        pos_loss = -self.ner_crf(pos_emissions, labels, attention_mask.bool())   #pos
         lid_loss = -self.lid_crf(lid_emissions, lids, attention_mask.bool())
 
-        ner_path = self.ner_crf.decode(ner_emissions)
-        ner_path = torch.tensor(ner_path, device=self.device).long()
+        pos_path = self.pos_crf.decode(pos_emissions)      #pos
+        pos_path = torch.tensor(pos_path, device=self.device).long() #pos
 
         lid_path = self.lid_crf.decode(lid_emissions)
         lid_path = torch.tensor(lid_path, device=self.device).long()
@@ -138,17 +139,17 @@ class BaseLine(pl.LightningModule):
         # Simply summing loss for now 
         # loss = ner_loss + lid_loss 
         
-        loss = self.weighted_loss(ner_loss, lid_loss)
+        loss = self.weighted_loss(pos_loss, lid_loss)
 
 
-        ner_metrics = self._compute_metrics(ner_path, labels, "train", "ner")
+        pos_metrics = self._compute_metrics(pos_path, labels, "train", "pos")  #pos
         lid_metrics = self._compute_metrics(lid_path, lids, "train", "lid")
 
         self.log("loss/train", loss)
-        self.log("loss-ner/train", ner_loss)
+        self.log("loss-pos/train", pos_loss)
         self.log("loss-lid/train", lid_loss)
 
-        self.log_dict(ner_metrics, on_step=False, on_epoch=True)
+        self.log_dict(pos_metrics, on_step=False, on_epoch=True)
         self.log_dict(lid_metrics, on_step=False, on_epoch=True)
 
         return loss
