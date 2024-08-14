@@ -3,9 +3,8 @@ import torch
 
 import pytorch_lightning as pl 
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.utilities.seed import seed_everything
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning import seed_everything
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
@@ -67,9 +66,7 @@ def main(args):
     )
 
     # Init Model 
-    freeze = False
-    if args.freeze == "freeze": 
-        freeze=True
+    freeze = args.freeze == "freeze"
 
     print(freeze)
 
@@ -89,7 +86,6 @@ def main(args):
     )
 
     # Init Logger & Trainer 
-    
     logger = TensorBoardLogger(
         save_dir=PATH_EXPERIMENTS,
         name=args.run_name
@@ -111,7 +107,7 @@ def main(args):
 
     cp = ModelCheckpoint(
         dirpath=args.checkpoint_path,
-        filename=f"{args.base_model}" + "-{f1/val-ner: .4f}",
+        filename=f"{args.base_model}-{{f1/val-ner:.4f}}",
         monitor='f1/val-ner',
         save_top_k=3,
         mode='max',
@@ -119,12 +115,12 @@ def main(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
+        devices=[args.gpus],  # Updated for recent versions
         accelerator="gpu",
-        devices=args.gpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es, cp], 
-        deterministic=True,        # Get same results on differnt GPUs ( hopefully )
+        deterministic=True,  # For reproducibility
     )
 
     # Runs
@@ -148,9 +144,7 @@ def kcrossfold(args):
     )
 
     # Init Model
-    freeze = False
-    if args.freeze == "freeze": 
-        freeze=True
+    freeze = args.freeze == "freeze"
     print(freeze)
 
     model = BaseLine(
@@ -191,12 +185,12 @@ def kcrossfold(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
+        devices=[args.gpus],  # Updated for recent versions
         accelerator="gpu",
-        devices=args.gpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es], 
-        deterministic=True,        # Get same results on differnt GPUs ( hopefully )
+        deterministic=True,  # For reproducibility
     )
 
     # Runs
@@ -206,7 +200,7 @@ def kcrossfold(args):
 def multidataset(args):
     seed_everything(42)
     
-    # important to keep the order of label2ids, tasknames and tasks same.
+    # Important to keep the order of label2ids, tasknames and tasks same.
     label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
     tasknames = ['NER', 'LID']
     tasks = [
@@ -220,11 +214,8 @@ def multidataset(args):
         'data/GLUECoS/LID/Romanized/validation.txt')
     ]
     
-    isFreezed = args.freeze
-    if isFreezed is None:
-        isFreezed = 'F'
-    else:
-        isFreezed = 'U'    # Unfreezed
+    isFreezed = args.freeze if args.freeze is not None else 'F'
+    isFreezed = 'U' if isFreezed == 'freeze' else 'F'
     
     run_name = args.run_name
     if run_name is None:
@@ -254,14 +245,12 @@ def multidataset(args):
         project=PROJECT_NAME
     )
 
-    # configure trainer
+    # Configure trainer
     trainer = pl.Trainer(
         log_every_n_steps=10,
         logger=logger,
         max_epochs=args.epochs,
-        gpus=args.gpus,
-        # gradient_clip_val=0.1,
-        # gradient_clip_algorithm="value"
+        devices=[args.gpus],  # Updated for recent versions
     )
 
     trainer.fit(model, datamodule=dm)
@@ -283,28 +272,4 @@ if __name__=="__main__":
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE, help="Set batch size")
     parser.add_argument("--base_model", type=str, default=BASE_MODEL, help="Set base transformer model")
     parser.add_argument("--freeze", type=str, default="unfreeze", help="Freeze or Unfreeze base model")
-    parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler Warmups")
-    parser.add_argument("--crossfold_splits", type=int, default=K_CROSSFOLD_VALIDATION_SPLITS, help="Set no. of splits")
-    parser.add_argument("--k", type=int, help="Set fold idx")
-
-    parser.add_argument("--dataset", type=str, default="lince", help="Set dataset to be used")
-    parser.add_argument("--dataset_dir", type=str, default=PATH_LINCE_DATASET, help="Set datset directory")
-    parser.add_argument("--run_name", type=str, required=True, help="Set run name per experiment")
-    parser.add_argument("--logger", type=str, default="tensorboard", help="Set logging software")
-    parser.add_argument("--checkpoint_path", type=str, default="./checkpoints", help="Set path to save models")
-    parser.add_argument("--exp_path", type=str, default=PATH_EXPERIMENTS, help="Set exp runs logs path")
-
-    # Hardware
-    parser.add_argument("--workers", type=int, default=NUM_WORKERS, help="Set CPU Threads")
-    parser.add_argument("--gpus", type=int, default=AVAIL_GPUS, help="Set no. of GPUs required")
-
-    args = parser.parse_args()
-
-    # test_dm(args)
-
-    # Check for reproducibility on differnt GPUs
-    # torch.use_deterministic_algorithms(True)
-
-    # main(args)
-    # kcrossfold(args)
-    multidataset(args)
+    parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler
