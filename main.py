@@ -9,8 +9,8 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
 from src.datamodules.lince import LinceDM, CrossValidationLinceDM
-from src.datamodules.gluecos.task import Task
-from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
+from src.datamodules.lince.task import Task  # Adjusted to lince
+from src.datamodules.lince.LinceSequenceLabelDataModule import LinceSequenceLabelDataModule  # Adjusted to lince
 
 from config import (
     GLOBAL_SEED,
@@ -29,8 +29,8 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    GLC_NER_LABEL2ID,
-    GLC_LID_LABEL2ID
+    LNC_NER_LABEL2ID,  # Adjusted to lince
+    LNC_LID_LABEL2ID   # Adjusted to lince
 )
 
 def test_dm(args):
@@ -50,7 +50,6 @@ def test_dm(args):
 
 
 def main(args):
-    
     # Set global seed 
     seed_everything(GLOBAL_SEED)
 
@@ -201,17 +200,17 @@ def multidataset(args):
     seed_everything(42)
     
     # Important to keep the order of label2ids, tasknames and tasks same.
-    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
+    label2ids = [ LNC_NER_LABEL2ID, LNC_LID_LABEL2ID ]  # Adjusted to lince
     tasknames = ['NER', 'LID']
     tasks = [
-    Task(GLC_NER_LABEL2ID,
-        'NER',
-        'data/GLUECoS/NER/Romanized/train.txt',
-        'data/GLUECoS/NER/Romanized/validation.txt'),
-    Task(GLC_LID_LABEL2ID,
-        'LID',
-        'data/GLUECoS/LID/Romanized/train.txt',
-        'data/GLUECoS/LID/Romanized/validation.txt')
+        Task(LNC_NER_LABEL2ID,
+            'NER',
+            'data/lince/NER/train.txt',  # Adjusted to lince
+            'data/lince/NER/validation.txt'),  # Adjusted to lince
+        Task(LNC_LID_LABEL2ID,
+            'LID',
+            'data/lince/LID/train.txt',  # Adjusted to lince
+            'data/lince/LID/validation.txt')  # Adjusted to lince
     ]
     
     isFreezed = args.freeze if args.freeze is not None else 'F'
@@ -221,7 +220,7 @@ def multidataset(args):
     if run_name is None:
         run_name = f"{args.task}|{isFreezed}|bm-{args.base_model}|epochs-{args.epochs}|lr-{args.lr}|bs-{args.batch_size}|sl-{args.max_seq_len}"
     
-    dm = GLUECoSSequenceLabelDataModule(
+    dm = LinceSequenceLabelDataModule(  # Adjusted to lince
         tasks,
         args.max_seq_len,
         args.base_model,
@@ -269,9 +268,6 @@ if __name__=="__main__":
     parser.add_argument("--dropout", type=float, default=DROPOUT_RATE, help="Set dropout rate")
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQUENCE_LENGTH, help="Set max seq length")
     parser.add_argument("--padding", type=str, default=PADDING, help="Set padding style")
-    parser.add_argument("--batch_size", type=int, default=BATCH_SIZE, help="Set batch size")
-    parser.add_argument("--base_model", type=str, default=BASE_MODEL, help="Set base transformer model")
-    parser.add_argument("--freeze", type=str, default="unfreeze", help="Freeze or Unfreeze base model")
     parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler Warmups")
     parser.add_argument("--crossfold_splits", type=int, default=K_CROSSFOLD_VALIDATION_SPLITS, help="Set no. of splits")
     parser.add_argument("--k", type=int, help="Set fold idx")
