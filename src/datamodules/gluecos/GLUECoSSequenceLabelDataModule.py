@@ -1,131 +1,266 @@
-import pytorch_lightning as pl
-from src.datamodules.gluecos.task import Task
-from config import PADDING
+from typing import Optional
 
-from transformers import AutoTokenizer
-from torch.utils.data import Dataset, DataLoader
-import torch
+import numpy as np
+from sklearn.model_selection import KFold 
+import torch 
+import pytorch_lightning as pl 
 
-import random
+from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADERS
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from torch.utils.data import DataLoader
+from transformers import AutoTokenizer 
+import datasets as ds
 
-def _align_tags(tokenized_outs, tags, label2id):
-            batch_tags = []
-            for example_id in range(len(tokenized_outs['input_ids'])):
-                example_tags = []
-                currentWord = None
-                for word_id in tokenized_outs.word_ids(example_id):
+from config import (
+    BATCH_SIZE,
+    GLOBAL_SEED,
+    K_CROSSFOLD_VALIDATION_SPLITS,
+    LABEL2ID,
+    LID2ID,
+    MAX_SEQUENCE_LENGTH,
+    NUM_WORKERS,
+    PADDING,
+    PATH_BASE_MODELS,
+    PATH_CACHE_DATASET,
+    PATH_LINCE_DATASET
+)
 
-                    if (word_id != currentWord):
-                        currentWord = word_id 
-                        tag = len(label2id) if word_id is None else label2id[tags[example_id][word_id]]
-                        example_tags.append(tag)
-                    
-                    elif word_id is None:
-                        example_tags.append(len(label2id))
-                    
-                    else:
-                        tag = label2id[tags[example_id][word_id]]
+class LinceDM(pl.LightningDataModule):
 
-                        if tag % 2 == 1:
-                            tag += 1
-                        
-                        example_tags.append(tag)
-                
-                batch_tags.append(example_tags)
-            
-            return torch.tensor(batch_tags)
+    def __init__(
+        self,
+        model_name: str,
+        dataset_name: str,
+        dataset_dir = PATH_LINCE_DATASET, 
+        batch_size: int = BATCH_SIZE,
+        max_seq_len: int = MAX_SEQUENCE_LENGTH,
+        padding: str = PADDING, 
+        label2id: dict = LABEL2ID,
+        lid2id: dict = LID2ID,
+        num_workers: int = NUM_WORKERS,
 
-class TaskDataset(Dataset):
-      def __init__(self, tasksData):
-        self.datapoints = []
-
-        task_no = 0
-        for taskData in tasksData:
-          taskData[1] = _align_tags(taskData[0], taskData[1], taskData[2])
-          for i in range(len(taskData[0]['input_ids'])):
-            datapoint = [
-                torch.tensor(taskData[0]['input_ids'][i]),
-                torch.tensor(taskData[0]['attention_mask'][i]),
-                torch.tensor(taskData[1][i]),
-                torch.tensor(task_no)
-            ]
-
-            self.datapoints.append(datapoint)
-          task_no += 1
-        
-        random.shuffle(self.datapoints)
-        
-      def __len__(self):
-        return len(self.datapoints)
-
-      def __getitem__(self, i):
-        return self.datapoints[i][0], self.datapoints[i][1], self.datapoints[i][2], self.datapoints[i][3]
-
-class GLUECoSSequenceLabelDataModule(pl.LightningDataModule):
-    def __init__(self, tasks, max_seq_len, base_model, batch_size, num_workers):
+    ) -> None:
         super().__init__()
-        
-        self.tasks = tasks
-        self.max_seq_len = max_seq_len
-        self.base_model = base_model
+
+        self.model_name_or_path = model_name
+        self.dataset_name = dataset_name
+        self.dataset_dir = dataset_dir
         self.batch_size = batch_size
+        self.max_seq_len = max_seq_len
+        self.padding = padding 
+        self.label2id = label2id
+        self.lid2id = lid2id
         self.num_workers = num_workers
+
+        self.data_map = {
+        "lince": {
+            "train": [f"{self.dataset_dir}/train.json"], 
+            "validation": [f"{self.dataset_dir}/val.json"]
+        }
+    }
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path=self.model_name_or_path,
+            cache_dir=PATH_BASE_MODELS, 
+            useFast=True,
+        )
     
-    def prepare_data(self):
-        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model)
+    def prepare_data(self) -> None:
+        ds.load_dataset(
+            'json',
+            data_files=self.data_map[self.dataset_name], 
+            field='data', 
+            cache_dir=PATH_CACHE_DATASET
+        )
     
-    def setup(self, stage):
-        self.train_data = []
-        for task in self.tasks:
-            self.train_data.append(self._read_gluecos_(task.train_path))
-            self.train_data[-1] = self._mtokenize_(self.train_data[-1], task.label2id)
-        self.training_dataset = TaskDataset(self.train_data)
+    def setup(self, stage: Optional[str] = None) -> None:
+        self.dataset = ds.load_dataset(
+            'json', 
+            data_files=self.data_map[self.dataset_name], 
+            field="data", 
+            cache_dir=PATH_CACHE_DATASET
+        )
+
+        self.dataset['train'] = self.dataset['train'].map(
+            self._convert_to_features,
+            batched=True,
+            drop_last_batch=True,
+            batch_size=self.batch_size,
+            num_proc=self.num_workers
+        )
+
+        self.dataset['validation'] = self.dataset['validation'].map(
+            self._convert_to_features,
+            batched=True,
+            drop_last_batch=True,
+            batch_size=self.batch_size,
+            num_proc=self.num_workers
+        )
+
+        self.dataset['train'].set_format('torch', columns=['input_ids', 'attention_mask', 'labels', 'lids'])
+        self.dataset['validation'].set_format('torch', columns=['input_ids', 'attention_mask', 'labels', 'lids'])
+
+
+    def train_dataloader(self) -> TRAIN_DATALOADERS:
+        return DataLoader(
+            dataset=self.dataset["train"], 
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            drop_last=True,
+        )
     
-        self.val_data = []
-        for task in self.tasks:
-            self.val_data.append(self._read_gluecos_(task.val_path))
-            self.val_data[-1] = self._mtokenize_(self.val_data[-1], task.label2id)
-        self.validation_dataset = TaskDataset(self.val_data)
-            
-    def train_dataloader(self):
-        return DataLoader(self.training_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
-    
-    def val_dataloader(self):
-        return DataLoader(self.validation_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
-    
-    def _mtokenize_(self, datapoints, word2id):
-      return [
-          self.tokenizer(
-                text=[ x[0] for x in datapoints ], 
-                max_length=self.max_seq_len,
-                padding=PADDING, 
-                truncation=True,
-                is_split_into_words=True,
-            ),
-          [ x[1] for x in datapoints ],
-          word2id
-          ]
-    
-    def _read_gluecos_(self, file_path):
-        toret = []
-        with open(file_path, encoding='utf-8') as f:
-            datapoint = [[], []]
-            
-            for line in f.readlines():
-                line = line.strip()
+    def val_dataloader(self) -> EVAL_DATALOADERS:
+        return DataLoader(
+            dataset=self.dataset["validation"], 
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            drop_last=True
+        )
+
+    def _convert_to_features(self, batch, indices=None):
+        features = self.tokenizer(
+            text=batch['sentence'], 
+            max_length=self.max_seq_len,
+            padding=self.padding, 
+            truncation=True,
+            is_split_into_words=True,
+        )    
+
+        features["labels"], features["lids"] = self._align_tags(features, batch['bio_tag'], batch["lid"]) 
+        return features
+
+
+    def _align_tags(self, tokenized_outs, tags, lids):
+        batch_tags = []
+        for example_id in range(0, len(tags)):
+            example_tags = []
+            currentWord = None
+            for word_id in tokenized_outs.word_ids(example_id):
+
+                if (word_id != currentWord):
+                    currentWord = word_id 
+                    tag = len(self.label2id) if word_id is None else self.label2id[tags[example_id][word_id]]
+                    example_tags.append(tag)
                 
-                if len(line) == 0 and len(datapoint[0]) != 0:
-                    toret.append(datapoint)
-                    datapoint = [[], []]
+                elif word_id is None:
+                    example_tags.append(len(self.label2id))
+                
                 else:
-                    try:
-                        split_line = line.split('\t')
-                        datapoint[0].append(split_line[0])
-                        datapoint[1].append(split_line[1])
-                    except:
-                        datapoint = [[], []] #just reset the datapoint.
+                    tag = self.label2id[tags[example_id][word_id]]
+
+                    if tag % 2 == 1:
+                        tag += 1
+                    
+                    example_tags.append(tag)
             
-            toret.append(datapoint)
-        return toret
+            batch_tags.append(example_tags)
+        
+        batch_lids = []
+        for example_id in range(0, len(lids)):
+            example_lids = []
+            currentWord = None
+            for word_id in tokenized_outs.word_ids(example_id):
+
+                if (word_id != currentWord):
+                    currentWord = word_id 
+                    lid = len(self.lid2id) if word_id is None else self.lid2id[lids[example_id][word_id]]
+                    example_lids.append(lid)
+                
+                elif word_id is None:
+                    example_lids.append(len(self.lid2id))
+                
+                else:
+                    lid = self.lid2id[lids[example_id][word_id]]
+                    example_lids.append(lid)
+            
+            batch_lids.append(example_lids)
+
+        
+        return batch_tags, batch_lids
+
+
+class CrossValidationLinceDM(LinceDM):
+    def __init__(
+        self,
+        model_name: str,
+        dataset_name: str,
+        k: int,
+        dataset_dir = PATH_LINCE_DATASET, 
+        batch_size: int = BATCH_SIZE,
+        max_seq_len: int = MAX_SEQUENCE_LENGTH,
+        padding: str = PADDING, 
+        label2id: dict = LABEL2ID,
+        lid2id: dict = LID2ID,
+        num_splits: int = K_CROSSFOLD_VALIDATION_SPLITS,
+        num_workers: int = NUM_WORKERS,
+        split_seed: int = GLOBAL_SEED,
+    ) -> None: 
+        super().__init__(model_name, dataset_name)
+        self.save_hyperparameters(logger=False)
+
+
+    def prepare_data(self) -> None:
+        ds.load_dataset(
+            'json',
+            data_files=f"{self.hparams.dataset_dir}/data.json", 
+            field='data', 
+            cache_dir=PATH_CACHE_DATASET
+        )
+    
+    def setup(self, stage: Optional[str] = None) -> None:
+        self.dataset = ds.load_dataset(
+            'json', 
+            data_files=f"{self.hparams.dataset_dir}/data.json",
+            field='data',
+            cache_dir=PATH_CACHE_DATASET
+        )
+
+        # Random state is essential to get same splits
+        kf = KFold(n_splits=10, shuffle=True, random_state=self.hparams.split_seed)
+
+        splits = kf.split(np.zeros(self.dataset['train'].num_rows))
+        all_splits = [k for k in splits]
+        train_idxs, val_idxs = all_splits[self.hparams.k]
+
+        self.dataset = ds.DatasetDict({
+            'train': self.dataset['train'].select(train_idxs), 
+            'validation': self.dataset['train'].select(val_idxs), 
+            'test': self.dataset['train'].select(val_idxs)
+        })
+        
+        self.dataset['train'] = self.dataset['train'].map(
+            self._convert_to_features,
+            batched=True,
+            drop_last_batch=True,
+            batch_size=self.batch_size,
+            num_proc=self.num_workers
+        )
+
+        self.dataset['validation'] = self.dataset['validation'].map(
+            self._convert_to_features,
+            batched=True,
+            drop_last_batch=True,
+            batch_size=self.batch_size,
+            num_proc=self.num_workers
+        )
+
+        self.dataset['test'] = self.dataset['test'].map(
+            self._convert_to_features,
+            batched=True,
+            drop_last_batch=True,
+            batch_size=self.batch_size,
+            num_proc=self.num_workers
+        )
+
+        self.dataset['train'].set_format('torch', columns=['input_ids', 'attention_mask', 'labels', 'lids'])
+        self.dataset['validation'].set_format('torch', columns=['input_ids', 'attention_mask', 'labels', 'lids'])
+        self.dataset['test'].set_format('torch', columns=['input_ids', 'attention_mask', 'labels', 'lids'])
+
+    def test_dataloader(self) -> EVAL_DATALOADERS:
+        return DataLoader(
+            dataset=self.dataset["test"], 
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            drop_last=True
+        )
