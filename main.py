@@ -272,4 +272,28 @@ if __name__=="__main__":
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE, help="Set batch size")
     parser.add_argument("--base_model", type=str, default=BASE_MODEL, help="Set base transformer model")
     parser.add_argument("--freeze", type=str, default="unfreeze", help="Freeze or Unfreeze base model")
-    parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler
+   parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler Warmups")
+    parser.add_argument("--crossfold_splits", type=int, default=K_CROSSFOLD_VALIDATION_SPLITS, help="Set no. of splits")
+    parser.add_argument("--k", type=int, help="Set fold idx")
+
+    parser.add_argument("--dataset", type=str, default="lince", help="Set dataset to be used")
+    parser.add_argument("--dataset_dir", type=str, default=PATH_LINCE_DATASET, help="Set datset directory")
+    parser.add_argument("--run_name", type=str, required=True, help="Set run name per experiment")
+    parser.add_argument("--logger", type=str, default="tensorboard", help="Set logging software")
+    parser.add_argument("--checkpoint_path", type=str, default="./checkpoints", help="Set path to save models")
+    parser.add_argument("--exp_path", type=str, default=PATH_EXPERIMENTS, help="Set exp runs logs path")
+
+    # Hardware
+    parser.add_argument("--workers", type=int, default=NUM_WORKERS, help="Set CPU Threads")
+    parser.add_argument("--gpus", type=int, default=AVAIL_GPUS, help="Set no. of GPUs required")
+
+    args = parser.parse_args()
+
+    # test_dm(args)
+
+    # Check for reproducibility on differnt GPUs
+    # torch.use_deterministic_algorithms(True)
+
+    # main(args)
+    # kcrossfold(args)
+    multidataset(args)
