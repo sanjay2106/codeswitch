@@ -3,15 +3,14 @@ import torch
 
 import pytorch_lightning as pl 
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.utilities.seed import seed_everything
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning import seed_everything
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
 from src.datamodules.lince import LinceDM, CrossValidationLinceDM
-from src.datamodules.gluecos.task import Task
-from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
+from src.datamodules.lince.task import Task  # Adjusted to lince
+from src.datamodules.lince.LinceSequenceLabelDataModule import LinceSequenceLabelDataModule  # Adjusted to lince
 
 from config import (
     GLOBAL_SEED,
@@ -30,8 +29,8 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    GLC_NER_LABEL2ID,
-    GLC_LID_LABEL2ID
+    LNC_NER_LABEL2ID,  # Adjusted to lince
+    LNC_LID_LABEL2ID   # Adjusted to lince
 )
 
 def test_dm(args):
@@ -51,7 +50,6 @@ def test_dm(args):
 
 
 def main(args):
-    
     # Set global seed 
     seed_everything(GLOBAL_SEED)
 
@@ -67,9 +65,7 @@ def main(args):
     )
 
     # Init Model 
-    freeze = False
-    if args.freeze == "freeze": 
-        freeze=True
+    freeze = args.freeze == "freeze"
 
     print(freeze)
 
@@ -89,7 +85,6 @@ def main(args):
     )
 
     # Init Logger & Trainer 
-    
     logger = TensorBoardLogger(
         save_dir=PATH_EXPERIMENTS,
         name=args.run_name
@@ -111,7 +106,7 @@ def main(args):
 
     cp = ModelCheckpoint(
         dirpath=args.checkpoint_path,
-        filename=f"{args.base_model}" + "-{f1/val-ner: .4f}",
+        filename=f"{args.base_model}-{{f1/val-ner:.4f}}",
         monitor='f1/val-ner',
         save_top_k=3,
         mode='max',
@@ -119,12 +114,12 @@ def main(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
+        devices=[args.gpus],  # Updated for recent versions
         accelerator="gpu",
-        devices=args.gpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es, cp], 
-        deterministic=True,        # Get same results on differnt GPUs ( hopefully )
+        deterministic=True,  # For reproducibility
     )
 
     # Runs
@@ -148,9 +143,7 @@ def kcrossfold(args):
     )
 
     # Init Model
-    freeze = False
-    if args.freeze == "freeze": 
-        freeze=True
+    freeze = args.freeze == "freeze"
     print(freeze)
 
     model = BaseLine(
@@ -191,12 +184,12 @@ def kcrossfold(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
+        devices=[args.gpus],  # Updated for recent versions
         accelerator="gpu",
-        devices=args.gpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es], 
-        deterministic=True,        # Get same results on differnt GPUs ( hopefully )
+        deterministic=True,  # For reproducibility
     )
 
     # Runs
@@ -206,31 +199,28 @@ def kcrossfold(args):
 def multidataset(args):
     seed_everything(42)
     
-    # important to keep the order of label2ids, tasknames and tasks same.
-    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
+    # Important to keep the order of label2ids, tasknames and tasks same.
+    label2ids = [ LNC_NER_LABEL2ID, LNC_LID_LABEL2ID ]  # Adjusted to lince
     tasknames = ['NER', 'LID']
     tasks = [
-    Task(GLC_NER_LABEL2ID,
-        'NER',
-        'data/GLUECoS/NER/Romanized/train.txt',
-        'data/GLUECoS/NER/Romanized/validation.txt'),
-    Task(GLC_LID_LABEL2ID,
-        'LID',
-        'data/GLUECoS/LID/Romanized/train.txt',
-        'data/GLUECoS/LID/Romanized/validation.txt')
+        Task(LNC_NER_LABEL2ID,
+            'NER',
+            'data/lince/NER/train.txt',  # Adjusted to lince
+            'data/lince/NER/validation.txt'),  # Adjusted to lince
+        Task(LNC_LID_LABEL2ID,
+            'LID',
+            'data/lince/LID/train.txt',  # Adjusted to lince
+            'data/lince/LID/validation.txt')  # Adjusted to lince
     ]
     
-    isFreezed = args.freeze
-    if isFreezed is None:
-        isFreezed = 'F'
-    else:
-        isFreezed = 'U'    # Unfreezed
+    isFreezed = args.freeze if args.freeze is not None else 'F'
+    isFreezed = 'U' if isFreezed == 'freeze' else 'F'
     
     run_name = args.run_name
     if run_name is None:
         run_name = f"{args.task}|{isFreezed}|bm-{args.base_model}|epochs-{args.epochs}|lr-{args.lr}|bs-{args.batch_size}|sl-{args.max_seq_len}"
     
-    dm = GLUECoSSequenceLabelDataModule(
+    dm = LinceSequenceLabelDataModule(  # Adjusted to lince
         tasks,
         args.max_seq_len,
         args.base_model,
@@ -254,14 +244,12 @@ def multidataset(args):
         project=PROJECT_NAME
     )
 
-    # configure trainer
+    # Configure trainer
     trainer = pl.Trainer(
         log_every_n_steps=10,
         logger=logger,
         max_epochs=args.epochs,
-        gpus=args.gpus,
-        # gradient_clip_val=0.1,
-        # gradient_clip_algorithm="value"
+        devices=[args.gpus],  # Updated for recent versions
     )
 
     trainer.fit(model, datamodule=dm)
@@ -269,7 +257,7 @@ def multidataset(args):
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     
-    # Hyperparams
+       # Hyperparams
     parser.add_argument("--epochs", type=int, default=MAX_EPOCHS, help="Set max epochs")
     parser.add_argument("--lr", type=float, default=LEARNING_RATE, help="Set Learning Rate")
     parser.add_argument("--ner_lr", type=float, default=LEARNING_RATE, help="Set task learning rate")
@@ -308,3 +296,8 @@ if __name__=="__main__":
     # main(args)
     # kcrossfold(args)
     multidataset(args)
+
+    # main(args)
+    # kcrossfold(args)
+    multidataset(args)
+    
