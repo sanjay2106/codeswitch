@@ -29,8 +29,8 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    GLC_NER_LABEL2ID,
-    GLC_POS_LABEL2ID
+    LIN_NER_LABEL2ID,
+    LIN_POS_LABEL2ID
 )
 
 def test_dm(args):
@@ -76,11 +76,11 @@ def main(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        lid_learning_rate=args.pos_lr, 
+        POS_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        lid_wd=args.pos_wd,
+        POS_wd=args.pos_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -153,11 +153,11 @@ def kcrossfold(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        lid_learning_rate=args.pos_lr, 
+        POS_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        lid_wd=args.lid_wd,
+        POS_wd=args.POS_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -200,35 +200,46 @@ def kcrossfold(args):
 def multidataset(args):
     seed_everything(42)
     
-    # Important to keep the order of label2ids, tasknames and tasks same.
-    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
+    # Define label2ids and tasks for NER and POS
+    label2ids = [LIN_NER_LABEL2ID, LIN_POS_LABEL2ID]
     tasknames = ['NER', 'POS']
     tasks = [
-    Task(GLC_NER_LABEL2ID,
-        'NER',
-        'data/lince/NER/train.conll',
-        'data/lince/NER/Romanized/validation.txt'),
-    Task(GLC_LID_LABEL2ID,
-        'LID',
-        'data/GLUECoS/LID/Romanized/train.txt',
-        'data/GLUECoS/LID/Romanized/validation.txt')
+        Task(
+            LIN_NER_LABEL2ID,
+            'NER',
+            'data/lince/ner/train.conll',
+            'data/lince/ner/val.conll'  # NER has a validation set
+        ),
+        Task(
+            LIN_POS_LABEL2ID,
+            'POS',
+            'data/lince/pos/train.conll',
+            None  # No validation set for POS
+        )
     ]
     
-    isFreezed = args.freeze if args.freeze is not None else 'F'
-    isFreezed = 'U' if isFreezed == 'freeze' else 'F'
+    isFreezed = args.freeze
+    if isFreezed is None:
+        isFreezed = 'F'
+    else:
+        isFreezed = 'U'    # Unfreezed
     
     run_name = args.run_name
     if run_name is None:
         run_name = f"{args.task}|{isFreezed}|bm-{args.base_model}|epochs-{args.epochs}|lr-{args.lr}|bs-{args.batch_size}|sl-{args.max_seq_len}"
     
-    dm = GLUECoSSequenceLabelDataModule(
-        tasks,
-        args.max_seq_len,
-        args.base_model,
-        args.batch_size,
-        args.workers
+    # Initialize DataModule
+    dm = LinceDM(
+        model_name=args.base_model,
+        dataset_name=args.dataset,
+        dataset_dir=args.dataset_dir,
+        batch_size=args.batch_size,
+        max_seq_len=args.max_seq_len,
+        padding=args.padding,
+        num_workers=args.workers
     )
     
+    # Initialize the model
     model = SequenceMultiTaskModel(
         label2ids,
         tasknames,
@@ -250,11 +261,14 @@ def multidataset(args):
         log_every_n_steps=10,
         logger=logger,
         max_epochs=args.epochs,
-        devices=[args.gpus],  # Updated for recent versions
+        accelerator="gpu",
+        devices=args.gpus,
+        # gradient_clip_val=0.1,
+        # gradient_clip_algorithm="value"
     )
 
+    # Train the model
     trainer.fit(model, datamodule=dm)
-
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     
