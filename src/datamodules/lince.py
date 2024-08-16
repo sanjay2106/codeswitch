@@ -1,8 +1,3 @@
-
-Here is the updated and complete code for your LinceDM and CrossValidationLinceDM classes. I've structured everything, including the __init__ methods, prepare_data, setup, and dataloaders, as well as the helper methods for tokenization and alignment of tags.
-
-python
-Copy code
 from typing import Optional
 
 import numpy as np
