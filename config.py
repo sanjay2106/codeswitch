@@ -3,8 +3,8 @@ import torch
 
 # PATHS 
 PATH_LINCE_DATASET = os.environ.get("PATH_LINCE_DATASET", "./data/lince/ner")
-PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
-PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
+#PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
+#PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
 PATH_BASE_MODELS = os.environ.get("PATH_BASE_MODELS", "./base_models")
 PATH_CACHE_DATASET = os.environ.get("PATH_CACHE_DATASET", "./data/cache")
 
@@ -46,7 +46,7 @@ LID2ID = {
     "rest": 2
 }
 
-GLC_NER_LABEL2ID = {
+LIN_NER_LABEL2ID = {
     "Other": 0,
     "B-Per": 1,
     "I-Per": 2,
@@ -56,11 +56,27 @@ GLC_NER_LABEL2ID = {
     "I-Loc": 6
 }
 
-GLC_LID_LABEL2ID = {
-    "EN": 0,
-    "HI": 1,
-    "OTHER": 2
+LIN_POS_LABEL2ID = {
+    "NOUN": 0,   # Common nouns (e.g., dog, house)
+    "VERB": 1,   # Verbs (e.g., run, eat)
+    "PRON": 2,   # Pronouns (e.g., he, she)
+    "ADJ": 3,    # Adjectives (e.g., big, quick)
+    "ADV": 4,    # Adverbs (e.g., quickly, well)
+    "ADP": 5,    # Adpositions (e.g., in, on)
+    "DET": 6,    # Determiners (e.g., the, a)
+    "CONJ": 7,   # Conjunctions (e.g., and, but)
+    "NUM": 8,    # Numerals (e.g., one, two)
+    "PART": 9,   # Particles (e.g., not, to in "to go")
+    "INTJ": 10,  # Interjections (e.g., oh, wow)
+    "PROPN": 11, # Proper nouns (e.g., John, Paris)
+    "PUNCT": 12, # Punctuation marks (e.g., .,?!)
+    "SYM": 13,   # Symbols (e.g., $, %, &)
+    "X": 14,     # Other (used for words that don't fit in the above categories)
+    "HI": 15,    # Hindi words that don't fall into the specific categories
+    "EN": 16,    # English words that don't fall into the specific categories
+    "OTHER": 17  # Any other tags that might be specific to the dataset
 }
+
 
 K_CROSSFOLD_VALIDATION_SPLITS = 10
 
