@@ -3,13 +3,12 @@ import torch
 
 import pytorch_lightning as pl 
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.utilities.seed import seed_everything
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning import seed_everything
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
-from src.datamodules.lince import LinceDM, CrossValidationLinceDM
+from src.datamodules.lince.lince import LinceDM, CrossValidationLinceDM
 #from src.datamodules.gluecos.task import Task
 #from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
 
@@ -67,9 +66,7 @@ def main(args):
     )
 
     # Init Model 
-    freeze = False
-    if args.freeze == "freeze": 
-        freeze=True
+    freeze = args.freeze == "freeze"
 
     print(freeze)
 
@@ -79,17 +76,16 @@ def main(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        pos_learning_rate=args.pos_lr, 
+        POS_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        pos_wd=args.pos_wd,
+        POS_wd=args.pos_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
 
     # Init Logger & Trainer 
-    
     logger = TensorBoardLogger(
         save_dir=PATH_EXPERIMENTS,
         name=args.run_name
@@ -111,7 +107,7 @@ def main(args):
 
     cp = ModelCheckpoint(
         dirpath=args.checkpoint_path,
-        filename=f"{args.base_model}" + "-{f1/val-ner: .4f}",
+        filename=f"{args.base_model}-{{f1/val-ner:.4f}}",
         monitor='f1/val-ner',
         save_top_k=3,
         mode='max',
@@ -119,12 +115,12 @@ def main(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
+        devices=[args.gpus],  # Updated for recent versions
         accelerator="gpu",
-        devices=args.gpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es, cp], 
-        deterministic=True,        # Get same results on differnt GPUs ( hopefully )
+        deterministic=True,  # For reproducibility
     )
 
     # Runs
@@ -148,9 +144,7 @@ def kcrossfold(args):
     )
 
     # Init Model
-    freeze = False
-    if args.freeze == "freeze": 
-        freeze=True
+    freeze = args.freeze == "freeze"
     print(freeze)
 
     model = BaseLine(
@@ -159,11 +153,11 @@ def kcrossfold(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        pos_learning_rate=args.pos_lr, 
+        POS_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        pos_wd=args.pos_wd,
+        POS_wd=args.POS_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -191,12 +185,12 @@ def kcrossfold(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
+        devices=[args.gpus],  # Updated for recent versions
         accelerator="gpu",
-        devices=args.gpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es], 
-        deterministic=True,        # Get same results on differnt GPUs ( hopefully )
+        deterministic=True,  # For reproducibility
     )
 
     # Runs
@@ -275,8 +269,6 @@ def multidataset(args):
 
     # Train the model
     trainer.fit(model, datamodule=dm)
-
-
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     
@@ -318,4 +310,4 @@ if __name__=="__main__":
 
     # main(args)
     # kcrossfold(args)
-    multidataset(args)
+    multidataset(args) 
