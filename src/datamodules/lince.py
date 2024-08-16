@@ -54,7 +54,7 @@ class LinceDM(pl.LightningDataModule):
 
         self.data_map = {
         "lince": {
-            "train": [f"{self.dataset_dir}/train.json"], 
+            "train": [f"{self.dataset_dir}/nertrain.json"], 
             "validation": [f"{self.dataset_dir}/val.json"]
         }
     }
