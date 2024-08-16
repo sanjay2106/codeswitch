@@ -8,8 +8,8 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
-from src.datamodules.lince.lince import LinceDM, CrossValidationLinceDM
-#from src.datamodules.gluecos.task import Task
+from src.datamodules.lince import LinceDM, CrossValidationLinceDM
+from src.datamodules.gluecos.task import Task
 #from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
 
 from config import (
