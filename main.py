@@ -10,8 +10,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
 from src.datamodules.lince import LinceDM, CrossValidationLinceDM
-from src.datamodules.gluecos.task import Task
-from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
+#from src.datamodules.gluecos.task import Task
+#from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
 
 from config import (
     GLOBAL_SEED,
@@ -30,8 +30,8 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    GLC_NER_LABEL2ID,
-    GLC_LID_LABEL2ID
+    LIN_NER_LABEL2ID,
+    LIN_POS_LABEL2ID
 )
 
 def test_dm(args):
@@ -79,11 +79,11 @@ def main(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        lid_learning_rate=args.lid_lr, 
+        pos_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        lid_wd=args.lid_wd,
+        pos_wd=args.pos_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -159,11 +159,11 @@ def kcrossfold(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        lid_learning_rate=args.lid_lr, 
+        pos_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        lid_wd=args.lid_wd,
+        pos_wd=args.pos_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -210,14 +210,14 @@ def multidataset(args):
     label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
     tasknames = ['NER', 'LID']
     tasks = [
-    Task(GLC_NER_LABEL2ID,
+    Task(LNC_NER_LABEL2ID,
         'NER',
-        'data/GLUECoS/NER/Romanized/train.txt',
-        'data/GLUECoS/NER/Romanized/validation.txt'),
-    Task(GLC_LID_LABEL2ID,
-        'LID',
-        'data/GLUECoS/LID/Romanized/train.txt',
-        'data/GLUECoS/LID/Romanized/validation.txt')
+        'data/lince/ner/train.conll',
+        'data/lince/ner/val'),
+    Task(LNC_LID_LABEL2ID,
+        'POS',
+        'data/lince/pos/train.conll',
+        #'data/GLUECoS/LID/Romanized/validation.txt')
     ]
     
     isFreezed = args.freeze
