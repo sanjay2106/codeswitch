@@ -3,8 +3,8 @@ import torch
 
 # PATHS 
 PATH_LINCE_DATASET = os.environ.get("PATH_LINCE_DATASET", "./data/lince/ner")
-PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
-PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
+#PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
+#PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
 PATH_BASE_MODELS = os.environ.get("PATH_BASE_MODELS", "./base_models")
 PATH_CACHE_DATASET = os.environ.get("PATH_CACHE_DATASET", "./data/cache")
 
