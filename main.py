@@ -9,8 +9,8 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
 from src.datamodules.lince.lince import LinceDM, CrossValidationLinceDM
-from src.datamodules.gluecos.task import Task
-from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
+#from src.datamodules.gluecos.task import Task
+#from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
 
 from config import (
     GLOBAL_SEED,
@@ -30,7 +30,7 @@ from config import (
     NUM_WORKERS,
     AVAIL_GPUS,
     GLC_NER_LABEL2ID,
-    GLC_LID_LABEL2ID
+    GLC_POS_LABEL2ID
 )
 
 def test_dm(args):
@@ -76,11 +76,11 @@ def main(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        lid_learning_rate=args.lid_lr, 
+        lid_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
-        lid_wd=args.lid_wd,
+        lid_wd=args.pos_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -153,7 +153,7 @@ def kcrossfold(args):
         padding=args.padding, 
         learning_rate=args.lr, 
         ner_learning_rate=args.ner_lr, 
-        lid_learning_rate=args.lid_lr, 
+        lid_learning_rate=args.pos_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
         ner_wd=args.ner_wd,
@@ -202,12 +202,12 @@ def multidataset(args):
     
     # Important to keep the order of label2ids, tasknames and tasks same.
     label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
-    tasknames = ['NER', 'LID']
+    tasknames = ['NER', 'POS']
     tasks = [
     Task(GLC_NER_LABEL2ID,
         'NER',
-        'data/GLUECoS/NER/Romanized/train.txt',
-        'data/GLUECoS/NER/Romanized/validation.txt'),
+        'data/lince/NER/train.conll',
+        'data/lince/NER/Romanized/validation.txt'),
     Task(GLC_LID_LABEL2ID,
         'LID',
         'data/GLUECoS/LID/Romanized/train.txt',
