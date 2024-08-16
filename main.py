@@ -206,18 +206,22 @@ def kcrossfold(args):
 def multidataset(args):
     seed_everything(42)
     
-    # important to keep the order of label2ids, tasknames and tasks same.
-    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
-    tasknames = ['NER', 'LID']
+    # Define label2ids and tasks for NER and POS
+    label2ids = [LIN_NER_LABEL2ID, LIN_POS_LABEL2ID]
+    tasknames = ['NER', 'POS']
     tasks = [
-    Task(LNC_NER_LABEL2ID,
-        'NER',
-        'data/lince/ner/train.conll',
-        'data/lince/ner/val'),
-    Task(LNC_LID_LABEL2ID,
-        'POS',
-        'data/lince/pos/train.conll',
-        #'data/GLUECoS/LID/Romanized/validation.txt')
+        Task(
+            LIN_NER_LABEL2ID,
+            'NER',
+            'data/lince/ner/train.conll',
+            'data/lince/ner/val.conll'  # NER has a validation set
+        ),
+        Task(
+            LIN_POS_LABEL2ID,
+            'POS',
+            'data/lince/pos/train.conll',
+            None  # No validation set for POS
+        )
     ]
     
     isFreezed = args.freeze
@@ -230,14 +234,18 @@ def multidataset(args):
     if run_name is None:
         run_name = f"{args.task}|{isFreezed}|bm-{args.base_model}|epochs-{args.epochs}|lr-{args.lr}|bs-{args.batch_size}|sl-{args.max_seq_len}"
     
-    dm = GLUECoSSequenceLabelDataModule(
-        tasks,
-        args.max_seq_len,
-        args.base_model,
-        args.batch_size,
-        args.workers
+    # Initialize DataModule
+    dm = LinceDM(
+        model_name=args.base_model,
+        dataset_name=args.dataset,
+        dataset_dir=args.dataset_dir,
+        batch_size=args.batch_size,
+        max_seq_len=args.max_seq_len,
+        padding=args.padding,
+        num_workers=args.workers
     )
     
+    # Initialize the model
     model = SequenceMultiTaskModel(
         label2ids,
         tasknames,
@@ -254,17 +262,20 @@ def multidataset(args):
         project=PROJECT_NAME
     )
 
-    # configure trainer
+    # Configure trainer
     trainer = pl.Trainer(
         log_every_n_steps=10,
         logger=logger,
         max_epochs=args.epochs,
-        gpus=args.gpus,
+        accelerator="gpu",
+        devices=args.gpus,
         # gradient_clip_val=0.1,
         # gradient_clip_algorithm="value"
     )
 
+    # Train the model
     trainer.fit(model, datamodule=dm)
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
