@@ -98,7 +98,11 @@ class SequenceMultiTaskModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         input_ids, attention_mask, labels, task_no = batch
         
-        linear_outs = self(self.baseModel(input_ids, attention_mask))
+        # Forward pass through the base model
+        base_model_outs = self.baseModel(input_ids=input_ids, attention_mask=attention_mask)
+        
+        # Pass the last hidden state to the forward method
+        linear_outs = self(base_model_outs)
         
         outlist = [ [[], [], []] for x in range(len(self.label2ids)) ]        
         for x in range(len(linear_outs)):
@@ -127,7 +131,11 @@ class SequenceMultiTaskModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         input_ids, attention_mask, labels, task_no = batch
         
-        linear_outs = self(self.baseModel(input_ids, attention_mask))
+        # Forward pass through the base model
+        base_model_outs = self.baseModel(input_ids=input_ids, attention_mask=attention_mask)
+        
+        # Pass the last hidden state to the forward method
+        linear_outs = self(base_model_outs)
         
         outlist = [ [[], [], []] for x in range(len(self.label2ids)) ]        
         for x in range(len(linear_outs)):
@@ -159,6 +167,7 @@ class SequenceMultiTaskModel(pl.LightningModule):
         linear_outs = self.linear(lstm_outs)
 
         return linear_outs
+
     
     def _compute_metrics(self, preds: torch.Tensor, labels: torch.Tensor, mode: str, task_id: int):
 
