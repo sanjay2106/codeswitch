@@ -29,7 +29,7 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    LABEL2ID,
+    LABEL2ID, #ner ids
     LIN_POS_LABEL2ID
 )
 
