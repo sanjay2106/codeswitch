@@ -46,15 +46,6 @@ LID2ID = {
     "rest": 2
 }
 
-LIN_NER_LABEL2ID = {
-    "Other": 0,
-    "B-Per": 1,
-    "I-Per": 2,
-    "B-Org": 3,
-    "I-Org": 4,
-    "B-Loc": 5,
-    "I-Loc": 6
-}
 
 LIN_POS_LABEL2ID = {
     "NOUN": 0,   # Common nouns (e.g., dog, house)
