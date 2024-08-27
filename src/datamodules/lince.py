@@ -16,7 +16,7 @@ from config import (
     GLOBAL_SEED,
     K_CROSSFOLD_VALIDATION_SPLITS,
     LABEL2ID,
-    LID2ID,
+    LIN_POS_LABEL2ID,
     MAX_SEQUENCE_LENGTH,
     NUM_WORKERS,
     PADDING,
@@ -37,7 +37,7 @@ class LinceDM(pl.LightningDataModule):
         max_seq_len: int = MAX_SEQUENCE_LENGTH,
         padding: str = PADDING, 
         label2id: dict = LABEL2ID,
-        lid2id: dict = LID2ID,
+        LIN_POS_LABEL2ID: dict = LIN_POS_LABEL2ID,
         num_workers: int = NUM_WORKERS,
     ) -> None:
         super().__init__()
@@ -50,7 +50,7 @@ class LinceDM(pl.LightningDataModule):
         self.max_seq_len = max_seq_len
         self.padding = padding 
         self.label2id = label2id
-        self.lid2id = lid2id
+        self.LIN_POS_LABEL2ID = LIN_POS_LABEL2ID
         self.num_workers = num_workers
 
         if self.task == 'ner':
@@ -60,8 +60,8 @@ class LinceDM(pl.LightningDataModule):
             }
         elif self.task == 'pos':
             self.data_map = {
-                "train": f"{self.dataset_dir}/train.conll", 
-                "validation": f"{self.dataset_dir}/dev.conll"
+                "train": f"{self.dataset_dir}/train.json", 
+                "validation": f"{self.dataset_dir}/val.json"
             }
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -198,14 +198,14 @@ class LinceDM(pl.LightningDataModule):
 
                 if (word_id != currentWord):
                     currentWord = word_id 
-                    lid = len(self.lid2id) if word_id is None else self.lid2id[lids[example_id][word_id]]
+                    lid = len(self.LIN_POS_LABEL2ID) if word_id is None else self.LIN_POS_LABEL2ID[lids[example_id][word_id]]
                     example_lids.append(lid)
                 
                 elif word_id is None:
-                    example_lids.append(len(self.lid2id))
+                    example_lids.append(len(self.LIN_POS_LABEL2ID))
                 
                 else:
-                    lid = self.lid2id[lids[example_id][word_id]]
+                    lid = self.LIN_POS_LABEL2ID[lids[example_id][word_id]]
                     example_lids.append(lid)
             
             batch_lids.append(example_lids)
@@ -251,7 +251,7 @@ class CrossValidationLinceDM(LinceDM):
         max_seq_len: int = MAX_SEQUENCE_LENGTH,
         padding: str = PADDING, 
         label2id: dict = LABEL2ID,
-        lid2id: dict = LID2ID,
+        LIN_POS_LABEL2ID: dict = LIN_POS_LABEL2ID,
         num_splits: int = K_CROSSFOLD_VALIDATION_SPLITS,
         num_workers: int = NUM_WORKERS,
         split_seed: int = GLOBAL_SEED,
