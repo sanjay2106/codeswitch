@@ -201,19 +201,21 @@ def multidataset(args):
     seed_everything(42)
     
     # Define label2ids and tasks for NER and POS
-    label2ids = [LIN_NER_LABEL2ID, LIN_POS_LABEL2ID]
+    label2ids = [LABEL2ID, LIN_POS_LABEL2ID]
     tasknames = ['NER', 'POS']
     tasks = [
         Task(
-            LIN_NER_LABEL2ID,
+            LABEL2ID,
             'NER',
-            'data/lince/ner/train.conll',
-            'data/lince/ner/val.conll'  # NER has a validation set
+            'data/lince/ner/train.json',
+            'data/lince/ner/val.json'  # NER has a validation set
         ),
         Task(
             LIN_POS_LABEL2ID,
             'POS',
-            'data/lince/pos/train.conll',
+            'data/lince/pos/train.json',
+            'data/lince/pos/train.json'
+            
             None  # No validation set for POS
         )
     ]
