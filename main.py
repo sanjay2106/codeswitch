@@ -115,8 +115,8 @@ def main(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        devices=[args.gpus],  # Updated for recent versions
-        accelerator="gpu",
+        devices=[args.cpus],  # Updated for recent versions
+        accelerator="cpu",
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es, cp], 
@@ -185,8 +185,8 @@ def kcrossfold(args):
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        devices=[args.gpus],  # Updated for recent versions
-        accelerator="gpu",
+        devices=[args.cpus],  # Updated for recent versions
+        accelerator="cpu",
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es], 
@@ -208,15 +208,16 @@ def multidataset(args):
             LABEL2ID,
             'NER',
             'data/lince/ner/train.json',
-            'data/lince/ner/val.json'  # NER has a validation set
+            'data/lince/ner/val.json',
+            task_no=0  # NER has a validation set
         ),
         Task(
             LIN_POS_LABEL2ID,
             'POS',
             'data/lince/pos/train.json',
-            'data/lince/pos/train.json'
-            
-            None  # No validation set for POS
+            'data/lince/pos/val.json',
+            task_no=1
+             # No validation set for POS
         )
     ]
     
@@ -263,8 +264,8 @@ def multidataset(args):
         log_every_n_steps=10,
         logger=logger,
         max_epochs=args.epochs,
-        accelerator="gpu",
-        devices=args.gpus,
+        accelerator="cpu",
+        devices=args.cpus,
         # gradient_clip_val=0.1,
         # gradient_clip_algorithm="value"
     )
@@ -301,7 +302,7 @@ if __name__=="__main__":
 
     # Hardware
     parser.add_argument("--workers", type=int, default=NUM_WORKERS, help="Set CPU Threads")
-    parser.add_argument("--gpus", type=int, default=AVAIL_GPUS, help="Set no. of GPUs required")
+    parser.add_argument("--cpus", type=int, default=AVAIL_GPUS, help="Set no. of GPUs required")
 
     args = parser.parse_args()
 
@@ -309,6 +310,10 @@ if __name__=="__main__":
 
     # Check for reproducibility on differnt GPUs
     # torch.use_deterministic_algorithms(True)
+
+    # main(args)
+    # kcrossfold(args)
+    multidataset(args) 
 
     # main(args)
     # kcrossfold(args)
