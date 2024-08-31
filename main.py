@@ -310,6 +310,6 @@ if __name__=="__main__":
     # Check for reproducibility on differnt GPUs
     # torch.use_deterministic_algorithms(True)
 
-    # main(args)
+    main(args)
     # kcrossfold(args)
-    multidataset(args) 
+    #multidataset(args) 
