@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.types import STEP_OUTPUT
-
 from torchmetrics.functional import precision, recall, f1_score
 from TorchCRF import CRF
 from transformers.optimization import AdamW
@@ -15,6 +14,7 @@ from src.modules.mtl_loss import MultiTaskLossWrapper
 from config import (
     LABEL2ID,
     LEARNING_RATE,
+    LID2ID,
     WARM_RESTARTS,
     WEIGHT_DECAY,
     DROPOUT_RATE,
@@ -29,14 +29,14 @@ class BaseLine(pl.LightningModule):
         max_seq_len: int = MAX_SEQUENCE_LENGTH,
         padding: str = PADDING,
         label2id: dict = LABEL2ID,
-        pos_label2id: dict = LABEL2ID,  # Added for POS tagging
+        lid2id: dict = LID2ID,
         learning_rate: float = LEARNING_RATE,
-        ner_learning_rate: float = LEARNING_RATE,
-        pos_learning_rate: float = LEARNING_RATE,  # Added for POS tagging
+        pos_learning_rate: float = LEARNING_RATE,  # Updated parameter
+        lid_learning_rate: float = LEARNING_RATE,
         warm_restart_epochs: int = WARM_RESTARTS,
         weight_decay: float = WEIGHT_DECAY,
-        ner_wd: float = WEIGHT_DECAY,
-        pos_wd: float = WEIGHT_DECAY,  # Added for POS tagging
+        pos_wd: float = WEIGHT_DECAY,  # Updated parameter
+        lid_wd: float = WEIGHT_DECAY,
         dropout_rate: float = DROPOUT_RATE,
         freeze: bool = False
     ) -> None:
@@ -44,8 +44,8 @@ class BaseLine(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.pos_pad_token_label = len(self.hparams.pos_label2id)
-        self.ner_pad_token_label = len(self.hparams.label2id)
+        self.lid_pad_token_label = len(self.hparams.lid2id)
+        self.pos_pad_token_label = len(self.hparams.label2id)
 
         # Shared params
         self.base_model = BaseModel(self.hparams.model_name)
@@ -69,114 +69,195 @@ class BaseLine(pl.LightningModule):
             nn.LayerNorm(32),
             nn.GELU()
         )
-        
-        # NER Task params
-        self.ner_net = nn.Sequential(
+
+        # POS Task params
+        self.pos_net = nn.Sequential(
             nn.Linear(32, len(self.hparams.label2id) + 1),
             nn.LayerNorm(len(self.hparams.label2id) + 1),
         )
 
-        self.ner_crf = CRF(
+        self.pos_crf = CRF(
             num_tags=len(self.hparams.label2id) + 1,
             batch_first=True
         )
 
-        # POS Task params
-        self.pos_net = nn.Sequential(
-            nn.Linear(32, len(self.hparams.pos_label2id) + 1),
-            nn.LayerNorm(len(self.hparams.pos_label2id) + 1)
+        # LID Task params
+        self.lid_net = nn.Sequential(
+            nn.Linear(32, len(self.hparams.lid2id) + 1),
+            nn.LayerNorm(len(self.hparams.lid2id) + 1)
         )
 
-        self.pos_crf = CRF(
-            num_tags=len(self.hparams.pos_label2id) + 1,
+        self.lid_crf = CRF(
+            num_tags=len(self.hparams.lid2id) + 1,
             batch_first=True
         )
 
-        self.weighted_loss = MultiTaskLossWrapper(num_tasks=2)  # POS and NER: two tasks
+        self.weighted_loss = MultiTaskLossWrapper(num_tasks=2)  # LID and POS: two tasks
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
-        base_model_outs = self.base_model(input_ids, attention_mask)
+        base_model_outs = self.base_model(
+            input_ids,
+            attention_mask
+        )
+
         base_outs = base_model_outs.last_hidden_state
         lstm_outs, _ = self.bi_lstm(base_outs)
         shared_net_outs = self.shared_net(lstm_outs)
 
-        # NER
-        ner_net_outs = self.ner_net(shared_net_outs)
-
         # POS
         pos_net_outs = self.pos_net(shared_net_outs)
 
-        return ner_net_outs, pos_net_outs
+        # LID
+        lid_net_outs = self.lid_net(shared_net_outs)
 
-    def _shared_step(self, batch, mode: str):
+        return pos_net_outs, lid_net_outs
+
+    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
         input_ids = batch['input_ids']
         attention_mask = batch['attention_mask']
-        ner_labels = batch['ner_labels']
-        pos_labels = batch['pos_labels']
+        labels = batch['labels']
+        lids = batch['lids']
 
-        ner_emissions, pos_emissions = self(input_ids, attention_mask)
+        pos_emissions, lid_emissions = self(input_ids, attention_mask)
 
-        ner_loss = -self.ner_crf(ner_emissions, ner_labels, attention_mask.bool())
-        pos_loss = -self.pos_crf(pos_emissions, pos_labels, attention_mask.bool())
-
-        ner_path = self.ner_crf.decode(ner_emissions)
-        ner_path = torch.tensor(ner_path, device=self.device).long()
+        pos_loss = -self.pos_crf(pos_emissions, labels, attention_mask.bool())
+        lid_loss = -self.lid_crf(lid_emissions, lids, attention_mask.bool())
 
         pos_path = self.pos_crf.decode(pos_emissions)
         pos_path = torch.tensor(pos_path, device=self.device).long()
 
-        loss = self.weighted_loss(ner_loss, pos_loss)
+        lid_path = self.lid_crf.decode(lid_emissions)
+        lid_path = torch.tensor(lid_path, device=self.device).long()
 
-        ner_metrics = self._compute_metrics(ner_path, ner_labels, mode, "ner")
-        pos_metrics = self._compute_metrics(pos_path, pos_labels, mode, "pos")
+        # Weighted Loss
+        loss = self.weighted_loss(pos_loss, lid_loss)
 
-        self.log(f"loss/{mode}", loss, on_step=(mode == "train"), on_epoch=True)
-        self.log(f"loss-ner/{mode}", ner_loss, on_step=(mode == "train"), on_epoch=True)
-        self.log(f"loss-pos/{mode}", pos_loss, on_step=(mode == "train"), on_epoch=True)
+        pos_metrics = self._compute_metrics(pos_path, labels, "train", "pos")
+        lid_metrics = self._compute_metrics(lid_path, lids, "train", "lid")
 
-        self.log_dict(ner_metrics, on_step=(mode == "train"), on_epoch=True)
-        self.log_dict(pos_metrics, on_step=(mode == "train"), on_epoch=True)
+        self.log("loss/train", loss)
+        self.log("loss-pos/train", pos_loss)
+        self.log("loss-lid/train", lid_loss)
+
+        self.log_dict(pos_metrics, on_step=False, on_epoch=True)
+        self.log_dict(lid_metrics, on_step=False, on_epoch=True)
 
         return loss
 
-    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        return self._shared_step(batch, "train")
-
     def validation_step(self, batch, batch_idx) -> Optional[STEP_OUTPUT]:
-        return self._shared_step(batch, "val")
+        input_ids = batch['input_ids']
+        attention_mask = batch['attention_mask']
+        labels = batch['labels']
+        lids = batch['lids']
+
+        pos_emissions, lid_emissions = self(input_ids, attention_mask)
+
+        pos_loss = -self.pos_crf(pos_emissions, labels, attention_mask.bool())
+        lid_loss = -self.lid_crf(lid_emissions, lids, attention_mask.bool())
+
+        pos_path = self.pos_crf.decode(pos_emissions)
+        pos_path = torch.tensor(pos_path, device=self.device).long()
+
+        lid_path = self.lid_crf.decode(lid_emissions)
+        lid_path = torch.tensor(lid_path, device=self.device).long()
+
+        loss = pos_loss + lid_loss
+        pos_metrics = self._compute_metrics(pos_path, labels, "val", "pos")
+        lid_metrics = self._compute_metrics(lid_path, lids, "val", "lid")
+
+        self.log("loss/val", loss)
+        self.log("loss-pos/val", pos_loss)
+        self.log("loss-lid/val", lid_loss)
+
+        self.log_dict(pos_metrics, on_step=False, on_epoch=True)
+        self.log_dict(lid_metrics, on_step=False, on_epoch=True)
 
     def test_step(self, batch, batch_idx) -> Optional[STEP_OUTPUT]:
-        return self._shared_step(batch, "test")
+        input_ids = batch['input_ids']
+        attention_mask = batch['attention_mask']
+        labels = batch['labels']
+        lids = batch['lids']
 
+        pos_emissions, lid_emissions = self(input_ids, attention_mask)
+
+        pos_loss = -self.pos_crf(pos_emissions, labels, attention_mask.bool())
+        lid_loss = -self.lid_crf(lid_emissions, lids, attention_mask.bool())
+
+        pos_path = self.pos_crf.decode(pos_emissions)
+        pos_path = torch.tensor(pos_path, device=self.device).long()
+
+        lid_path = self.lid_crf.decode(lid_emissions)
+        lid_path = torch.tensor(lid_path, device=self.device).long()
+
+        loss = pos_loss + lid_loss
+        pos_metrics = self._compute_metrics(pos_path, labels, "test", "pos")
+        lid_metrics = self._compute_metrics(lid_path, lids, "test", "lid")
+
+        self.log("loss/test", loss)
+        self.log("loss-pos/test", pos_loss)
+        self.log("loss-lid/test", lid_loss)
+
+        # Ensure metrics are properly logged
+        if pos_metrics:
+            self.log_dict(pos_metrics)
+        if lid_metrics:
+            self.log_dict(lid_metrics)
+
+    
     def configure_optimizers(self):
+        # Parameters without specific lr or weight_decay will use global settings
         no_decay = ["bias", "LayerNorm.weight"]
 
         optimizer_grouped_parameters = [
             {
-                'params': [p for n, p in self.bi_lstm.named_parameters() if not any(nd in n for nd in no_decay)],
+                'params': [
+                    p
+                    for n, p in self.bi_lstm.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
             },
             {
-                'params': [p for n, p in self.shared_net.named_parameters() if not any(nd in n for nd in no_decay)],
+                'params': [
+                    p
+                    for n, p in self.shared_net.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
             },
             {
-                'params': [p for n, p in self.ner_net.named_parameters() if not any(nd in n for nd in no_decay)],
-                'lr': self.hparams.ner_learning_rate,
-                'weight_decay': self.hparams.ner_wd
+                'params': [
+                    p
+                    for n, p in self.pos_net.named_parameters()  # Updated from ner_net to pos_net
+                    if not any(nd in n for nd in no_decay)
+                ],
+                'lr': self.hparams.pos_learning_rate,  # Updated parameter
+                'weight_decay': self.hparams.pos_wd  # Updated parameter
             },
             {
-                'params': [p for n, p in self.pos_net.named_parameters() if not any(nd in n for nd in no_decay)],
-                'lr': self.hparams.pos_learning_rate,
-                'weight_decay': self.hparams.pos_wd
+                'params': [
+                    p
+                    for n, p in self.lid_net.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
+                'lr': self.hparams.lid_learning_rate,
+                'weight_decay': self.hparams.lid_wd
             },
             {
-                'params': [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)],
+                'params': [
+                    p
+                    for n, p in self.named_parameters()
+                    if any(nd in n for nd in no_decay)
+                ],
                 'weight_decay': 0.0
             }
         ]
 
-        if not self.hparams.freeze:
+        if self.hparams.freeze != "freeze":
             optimizer_grouped_parameters.append({
-                'params': [p for n, p in self.base_model.named_parameters() if not any(nd in n for nd in no_decay)],
+                'params': [
+                    p
+                    for n, p in self.base_model.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
             })
 
         optimizer = AdamW(
@@ -186,61 +267,64 @@ class BaseLine(pl.LightningModule):
         )
 
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer=optimizer,
-            T_0=self.hparams.warm_restart_epochs,
+            optimizer,
+            T_0=self.hparams.warm_restart_epochs
         )
 
         return [optimizer], [lr_scheduler]
-
     def _compute_metrics(self, preds: torch.Tensor, targets: torch.Tensor, mode: str, task: str):
-        preds = preds.reshape(-1, 1)
-        preds = preds.type_as(targets)  # Ensure preds tensor is on the same device as targets
-
-        targets = targets.reshape(-1, 1)
+        preds = preds.reshape(-1)
+        targets = targets.reshape(-1)
 
         metrics = {}
 
-        if task == "ner":
+        if task == "pos":
             metrics[f"prec/{mode}-{task}"] = precision(
-                preds, targets,
-                average="macro",
-                num_classes=len(self.hparams.label2id) + 1,
-                ignore_index=self.ner_pad_token_label
+                preds, targets, 
+                average="macro", 
+                num_classes=len(self.hparams.label2id) + 1, 
+                ignore_index=self.pos_pad_token_label,  # Updated from ner_pad_token_label
+                task="multiclass"
             )
-
+            
             metrics[f"rec/{mode}-{task}"] = recall(
-                preds, targets,
-                average="macro",
+                preds, targets, 
+                average="macro", 
                 num_classes=len(self.hparams.label2id) + 1,
-                ignore_index=self.ner_pad_token_label
+                ignore_index=self.pos_pad_token_label,  # Updated from ner_pad_token_label
+                task="multiclass"
             )
 
             metrics[f"f1/{mode}-{task}"] = f1_score(
-                preds, targets,
-                average="macro",
+                preds, targets, 
+                average="macro", 
                 num_classes=len(self.hparams.label2id) + 1,
-                ignore_index=self.ner_pad_token_label
+                ignore_index=self.pos_pad_token_label,  # Updated from ner_pad_token_label
+                task="multiclass"
             )
 
-        elif task == "pos":
+        elif task == "lid":
             metrics[f"prec/{mode}-{task}"] = precision(
-                preds, targets,
-                average="macro",
-                num_classes=len(self.hparams.pos_label2id) + 1,
-                ignore_index=self.pos_pad_token_label
+                preds, targets, 
+                average="macro", 
+                num_classes=len(self.hparams.lid2id) + 1, 
+                ignore_index=self.lid_pad_token_label,
+                task="multiclass"
             )
             metrics[f"rec/{mode}-{task}"] = recall(
-                preds, targets,
-                average="macro",
-                num_classes=len(self.hparams.pos_label2id) + 1,
-                ignore_index=self.pos_pad_token_label
+                preds, targets, 
+                average="macro", 
+                num_classes=len(self.hparams.lid2id) + 1, 
+                ignore_index=self.lid_pad_token_label,
+                task="multiclass"
             )
 
             metrics[f"f1/{mode}-{task}"] = f1_score(
-                preds, targets,
-                average="macro",
-                num_classes=len(self.hparams.pos_label2id) + 1,
-                ignore_index=self.pos_pad_token_label
+                preds, targets, 
+                average="macro", 
+                num_classes=len(self.hparams.lid2id) + 1, 
+                ignore_index=self.lid_pad_token_label,
+                task="multiclass"
             )
 
         return metrics

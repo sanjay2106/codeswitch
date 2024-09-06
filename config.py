@@ -3,8 +3,8 @@ import torch
 
 # PATHS 
 PATH_LINCE_DATASET = os.environ.get("PATH_LINCE_DATASET", "./data/lince/ner")
-#PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
-#PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
+PATH_GLUECOS_LID = os.environ.get("PATH_GLUECOS_LID_DATASET", "./data/GLUECoS/LID/Romanized")
+PATH_GLUECOS_NER = os.environ.get("PATH_GLUECOS_NER_DATASET", "./data/GLUECoS/NER/Romanized")
 PATH_BASE_MODELS = os.environ.get("PATH_BASE_MODELS", "./base_models")
 PATH_CACHE_DATASET = os.environ.get("PATH_CACHE_DATASET", "./data/cache")
 
@@ -31,23 +31,6 @@ MAX_SEQUENCE_LENGTH = 64
 PADDING = "max_length"
 
 LABEL2ID = {
-    "O": 0, 
-    "B-PERSON": 1, 
-    "I-PERSON": 2, 
-    "B-ORGANISATION": 3, 
-    "I-ORGANISATION": 4, 
-    "B-PLACE": 5, 
-    "I-PLACE": 6,
-}
-
-LID2ID = {
-    "hi": 0, 
-    "en": 1, 
-    "rest": 2
-}
-
-
-LIN_POS_LABEL2ID = {
     "NOUN": 0,   # Common nouns (e.g., dog, house)
     "VERB": 1,   # Verbs (e.g., run, eat)
     "PRON": 2,   # Pronouns (e.g., he, she)
@@ -65,9 +48,32 @@ LIN_POS_LABEL2ID = {
     "X": 14,     # Other (used for words that don't fit in the above categories)
     "HI": 15,    # Hindi words that don't fall into the specific categories
     "EN": 16,    # English words that don't fall into the specific categories
-    "OTHER": 17  # Any other tags that might be specific to the dataset
+    "PART_NEG": 17,
+    "PRON_WH": 18,
+    "OTHERS":19 
 }
 
+LID2ID = {
+    "hi": 0, 
+    "en": 1, 
+    "rest": 2
+}
+
+GLC_NER_LABEL2ID = {
+    "Other": 0,
+    "B-Per": 1,
+    "I-Per": 2,
+    "B-Org": 3,
+    "I-Org": 4,
+    "B-Loc": 5,
+    "I-Loc": 6
+}
+
+GLC_LID_LABEL2ID = {
+    "EN": 0,
+    "HI": 1,
+    "OTHER": 2
+}
 
 K_CROSSFOLD_VALIDATION_SPLITS = 10
 
