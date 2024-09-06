@@ -10,7 +10,7 @@ from src.models.baseline.baseline import BaseLine
 from src.models.multidataset.sequencemultitask import SequenceMultiTaskModel
 from src.datamodules.lince import LinceDM, CrossValidationLinceDM
 from src.datamodules.gluecos.task import Task
-#from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
+from src.datamodules.gluecos.GLUECoSSequenceLabelDataModule import GLUECoSSequenceLabelDataModule
 
 from config import (
     GLOBAL_SEED,
@@ -29,8 +29,8 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    LABEL2ID, #ner ids
-    LIN_POS_LABEL2ID
+    GLC_NER_LABEL2ID,  # Use POS label2id mapping
+    GLC_LID_LABEL2ID
 )
 
 def test_dm(args):
@@ -66,7 +66,9 @@ def main(args):
     )
 
     # Init Model 
-    freeze = args.freeze == "freeze"
+    freeze = False
+    if args.freeze == "freeze": 
+        freeze=True
 
     print(freeze)
 
@@ -75,17 +77,18 @@ def main(args):
         max_seq_len=args.max_seq_len, 
         padding=args.padding, 
         learning_rate=args.lr, 
-        ner_learning_rate=args.ner_lr, 
-        POS_learning_rate=args.pos_lr, 
+        pos_learning_rate=args.pos_lr,  # Change these to pos_lr and lid_lr if needed
+        lid_learning_rate=args.lid_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
-        ner_wd=args.ner_wd,
-        POS_wd=args.pos_wd,
+        pos_wd=args.pos_wd,
+        lid_wd=args.lid_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
 
     # Init Logger & Trainer 
+    
     logger = TensorBoardLogger(
         save_dir=PATH_EXPERIMENTS,
         name=args.run_name
@@ -100,27 +103,27 @@ def main(args):
         )
 
     es = EarlyStopping(
-        monitor="f1/val-ner", 
+        monitor="f1/val-pos",  # Updated to monitor POS
         mode='max',
         patience=5,
     )
 
     cp = ModelCheckpoint(
         dirpath=args.checkpoint_path,
-        filename=f"{args.base_model}-{{f1/val-ner:.4f}}",
-        monitor='f1/val-ner',
+        filename=f"{args.base_model}" + "-{f1/val-pos: .4f}",  # Updated to save POS metrics
+        monitor='f1/val-pos',
         save_top_k=3,
         mode='max',
     )
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        devices=[args.gpus],  # Updated for recent versions
-        accelerator="gpu",
+        accelerator="cpu",
+        devices=args.cpus,
         logger=logger,
         log_every_n_steps=20,
         callbacks=[es, cp], 
-        deterministic=True,  # For reproducibility
+        deterministic=True,
     )
 
     # Runs
@@ -144,7 +147,9 @@ def kcrossfold(args):
     )
 
     # Init Model
-    freeze = args.freeze == "freeze"
+    freeze = False
+    if args.freeze == "freeze": 
+        freeze=True
     print(freeze)
 
     model = BaseLine(
@@ -152,12 +157,12 @@ def kcrossfold(args):
         max_seq_len=args.max_seq_len, 
         padding=args.padding, 
         learning_rate=args.lr, 
-        ner_learning_rate=args.ner_lr, 
-        POS_learning_rate=args.pos_lr, 
+        pos_learning_rate=args.pos_lr, 
+        lid_learning_rate=args.lid_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
-        ner_wd=args.ner_wd,
-        POS_wd=args.POS_wd,
+        pos_wd=args.pos_wd,
+        lid_wd=args.lid_wd,
         dropout_rate=args.dropout,
         freeze=freeze
     )
@@ -178,46 +183,40 @@ def kcrossfold(args):
         )   
     
     es = EarlyStopping(
-        monitor="f1/val-ner", 
+        monitor="f1/val-pos", 
         mode='max',
         patience=5,
     )
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        devices=[args.gpus],  # Updated for recent versions
-        accelerator="gpu",
+        accelerator="cpu",
+        devices=args.cpus,
         logger=logger,
         log_every_n_steps=20,
-        callbacks=[es], 
-        deterministic=True,  # For reproducibility
+        callbacks=[es, cp], 
+        deterministic=True,
     )
 
     # Runs
     trainer.fit(model, datamodule=dm)
-    # trainer.test(model, datamodule=dm)
+
 
 def multidataset(args):
     seed_everything(42)
     
-    # Define label2ids and tasks for NER and POS
-    label2ids = [LABEL2ID, LIN_POS_LABEL2ID]
-    tasknames = ['NER', 'POS']
+    # important to keep the order of label2ids, tasknames and tasks same.
+    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]  # Changed to POS and LID
+    tasknames = ['POS', 'LID']  # Changed from NER to POS
     tasks = [
-        Task(
-            LABEL2ID,
-            'NER',
-            'data/lince/ner/train.json',
-            'data/lince/ner/val.json'  # NER has a validation set
-        ),
-        Task(
-            LIN_POS_LABEL2ID,
+        Task(GLC_NER_LABEL2ID,
             'POS',
-            'data/lince/pos/train.json',
-            'data/lince/pos/train.json'
-            
-            None  # No validation set for POS
-        )
+            'data/GLUECoS/POS/train.txt',  # Update paths for POS dataset
+            'data/GLUECoS/POS/validation.txt'),
+        Task(GLC_LID_LABEL2ID,
+            'LID',
+            'data/GLUECoS/LID/train.txt',
+            'data/GLUECoS/LID/validation.txt')
     ]
     
     isFreezed = args.freeze
@@ -230,18 +229,14 @@ def multidataset(args):
     if run_name is None:
         run_name = f"{args.task}|{isFreezed}|bm-{args.base_model}|epochs-{args.epochs}|lr-{args.lr}|bs-{args.batch_size}|sl-{args.max_seq_len}"
     
-    # Initialize DataModule
-    dm = LinceDM(
-        model_name=args.base_model,
-        dataset_name=args.dataset,
-        dataset_dir=args.dataset_dir,
-        batch_size=args.batch_size,
-        max_seq_len=args.max_seq_len,
-        padding=args.padding,
-        num_workers=args.workers
+    dm = GLUECoSSequenceLabelDataModule(
+        tasks,
+        args.max_seq_len,
+        args.base_model,
+        args.batch_size,
+        args.workers
     )
     
-    # Initialize the model
     model = SequenceMultiTaskModel(
         label2ids,
         tasknames,
@@ -258,34 +253,37 @@ def multidataset(args):
         project=PROJECT_NAME
     )
 
-    # Configure trainer
     trainer = pl.Trainer(
-        log_every_n_steps=10,
-        logger=logger,
         max_epochs=args.epochs,
-        accelerator="gpu",
-        devices=args.gpus,
-        # gradient_clip_val=0.1,
-        # gradient_clip_algorithm="value"
+        accelerator="cpu",
+        devices=args.cpus,
+        logger=logger,
+        log_every_n_steps=20,
+        callbacks=[es, cp], 
+        deterministic=True,
     )
 
-    # Train the model
     trainer.fit(model, datamodule=dm)
+
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     
     # Hyperparams
     parser.add_argument("--epochs", type=int, default=MAX_EPOCHS, help="Set max epochs")
     parser.add_argument("--lr", type=float, default=LEARNING_RATE, help="Set Learning Rate")
-    parser.add_argument("--ner_lr", type=float, default=LEARNING_RATE, help="Set task learning rate")
-    parser.add_argument("--lid_lr", type=float, default=LEARNING_RATE, help="Set task learning rate")
+    parser.add_argument("--pos_lr", type=float, default=LEARNING_RATE, help="Set POS task learning rate")  # Updated to POS
+    parser.add_argument("--lid_lr", type=float, default=LEARNING_RATE, help="Set LID task learning rate")
     parser.add_argument("--weight_decay", type=float, default=WEIGHT_DECAY, help="Set Weight Decay")
-    parser.add_argument("--ner_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay")
-    parser.add_argument("--lid_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay")
+    parser.add_argument("--pos_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay for POS")  # Updated to POS
+    parser.add_argument("--lid_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay for LID")
     parser.add_argument("--dropout", type=float, default=DROPOUT_RATE, help="Set dropout rate")
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQUENCE_LENGTH, help="Set max seq length")
     parser.add_argument("--padding", type=str, default=PADDING, help="Set padding style")
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE, help="Set batch size")
+    
+    
+    
     parser.add_argument("--base_model", type=str, default=BASE_MODEL, help="Set base transformer model")
     parser.add_argument("--freeze", type=str, default="unfreeze", help="Freeze or Unfreeze base model")
     parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler Warmups")
@@ -301,7 +299,7 @@ if __name__=="__main__":
 
     # Hardware
     parser.add_argument("--workers", type=int, default=NUM_WORKERS, help="Set CPU Threads")
-    parser.add_argument("--gpus", type=int, default=AVAIL_GPUS, help="Set no. of GPUs required")
+    parser.add_argument("--cpus", type=int, default=AVAIL_GPUS, help="Set no. of GPUs required")
 
     args = parser.parse_args()
 
@@ -312,4 +310,4 @@ if __name__=="__main__":
 
     main(args)
     # kcrossfold(args)
-    #multidataset(args) 
+    #multidataset(args)
