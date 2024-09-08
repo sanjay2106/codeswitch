@@ -29,7 +29,7 @@ from config import (
     BASE_MODEL,
     NUM_WORKERS,
     AVAIL_GPUS,
-    GLC_NER_LABEL2ID,  # Use POS label2id mapping
+    GLC_NER_LABEL2ID,
     GLC_LID_LABEL2ID
 )
 
@@ -77,11 +77,11 @@ def main(args):
         max_seq_len=args.max_seq_len, 
         padding=args.padding, 
         learning_rate=args.lr, 
-        pos_learning_rate=args.pos_lr,  # Change these to pos_lr and lid_lr if needed
+        ner_learning_rate=args.ner_lr, 
         lid_learning_rate=args.lid_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
-        pos_wd=args.pos_wd,
+        ner_wd=args.ner_wd,
         lid_wd=args.lid_wd,
         dropout_rate=args.dropout,
         freeze=freeze
@@ -103,28 +103,29 @@ def main(args):
         )
 
     es = EarlyStopping(
-        monitor="f1/val-pos",  # Updated to monitor POS
+        monitor="f1/val-ner", 
         mode='max',
         patience=5,
     )
 
     cp = ModelCheckpoint(
         dirpath=args.checkpoint_path,
-        filename=f"{args.base_model}" + "-{f1/val-pos: .4f}",  # Updated to save POS metrics
-        monitor='f1/val-pos',
+        filename=f"{args.base_model}" + "-{f1/val-ner: .4f}",
+        monitor='f1/val-ner',
         save_top_k=3,
         mode='max',
     )
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        accelerator="cpu",
-        devices=args.cpus,
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=torch.cuda.device_count() if torch.cuda.is_available() else min(torch.get_num_threads(), 1),
         logger=logger,
         log_every_n_steps=20,
-        callbacks=[es, cp], 
-        deterministic=True,
+        callbacks=[es, cp],
+        deterministic=True
     )
+ 
 
     # Runs
     trainer.fit(model, datamodule=dm)
@@ -157,11 +158,11 @@ def kcrossfold(args):
         max_seq_len=args.max_seq_len, 
         padding=args.padding, 
         learning_rate=args.lr, 
-        pos_learning_rate=args.pos_lr, 
+        ner_learning_rate=args.ner_lr, 
         lid_learning_rate=args.lid_lr, 
         warm_restart_epochs=args.warm_restart_epochs,
         weight_decay=args.weight_decay,
-        pos_wd=args.pos_wd,
+        ner_wd=args.ner_wd,
         lid_wd=args.lid_wd,
         dropout_rate=args.dropout,
         freeze=freeze
@@ -183,40 +184,49 @@ def kcrossfold(args):
         )   
     
     es = EarlyStopping(
-        monitor="f1/val-pos", 
+        monitor="f1/val-ner",  # Updated to monitor POS
         mode='max',
         patience=5,
     )
 
+    cp = ModelCheckpoint(
+        dirpath=args.checkpoint_path,
+        filename=f"{args.base_model}" + "-{f1/val-ner: .4f}",  # Updated to save POS metrics
+        monitor='f1/val-ner',
+        save_top_k=3,
+        mode='max',
+    )
+
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        accelerator="cpu",
-        devices=args.cpus,
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=torch.cuda.device_count() if torch.cuda.is_available() else min(torch.get_num_threads(), 1),
         logger=logger,
         log_every_n_steps=20,
-        callbacks=[es, cp], 
-        deterministic=True,
+        callbacks=[es, cp],
+        deterministic=True
     )
+
 
     # Runs
     trainer.fit(model, datamodule=dm)
-
+    # trainer.test(model, datamodule=dm)
 
 def multidataset(args):
     seed_everything(42)
     
     # important to keep the order of label2ids, tasknames and tasks same.
-    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]  # Changed to POS and LID
-    tasknames = ['POS', 'LID']  # Changed from NER to POS
+    label2ids = [ GLC_NER_LABEL2ID, GLC_LID_LABEL2ID ]
+    tasknames = ['NER', 'LID']
     tasks = [
-        Task(GLC_NER_LABEL2ID,
-            'POS',
-            'data/GLUECoS/POS/train.txt',  # Update paths for POS dataset
-            'data/GLUECoS/POS/validation.txt'),
-        Task(GLC_LID_LABEL2ID,
-            'LID',
-            'data/GLUECoS/LID/train.txt',
-            'data/GLUECoS/LID/validation.txt')
+    Task(GLC_NER_LABEL2ID,
+        'NER',
+        'data/GLUECoS/NER/Romanized/train.txt',
+        'data/GLUECoS/NER/Romanized/validation.txt'),
+    Task(GLC_LID_LABEL2ID,
+        'LID',
+        'data/GLUECoS/LID/Romanized/train.txt',
+        'data/GLUECoS/LID/Romanized/validation.txt')
     ]
     
     isFreezed = args.freeze
@@ -253,18 +263,19 @@ def multidataset(args):
         project=PROJECT_NAME
     )
 
+    # configure trainer
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        accelerator="cpu",
-        devices=args.cpus,
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=torch.cuda.device_count() if torch.cuda.is_available() else min(torch.get_num_threads(), 1),
         logger=logger,
         log_every_n_steps=20,
-        callbacks=[es, cp], 
-        deterministic=True,
+        callbacks=[es, cp],
+        deterministic=True
     )
 
-    trainer.fit(model, datamodule=dm)
 
+    trainer.fit(model, datamodule=dm)
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
@@ -272,18 +283,15 @@ if __name__=="__main__":
     # Hyperparams
     parser.add_argument("--epochs", type=int, default=MAX_EPOCHS, help="Set max epochs")
     parser.add_argument("--lr", type=float, default=LEARNING_RATE, help="Set Learning Rate")
-    parser.add_argument("--pos_lr", type=float, default=LEARNING_RATE, help="Set POS task learning rate")  # Updated to POS
-    parser.add_argument("--lid_lr", type=float, default=LEARNING_RATE, help="Set LID task learning rate")
+    parser.add_argument("--ner_lr", type=float, default=LEARNING_RATE, help="Set task learning rate")
+    parser.add_argument("--lid_lr", type=float, default=LEARNING_RATE, help="Set task learning rate")
     parser.add_argument("--weight_decay", type=float, default=WEIGHT_DECAY, help="Set Weight Decay")
-    parser.add_argument("--pos_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay for POS")  # Updated to POS
-    parser.add_argument("--lid_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay for LID")
+    parser.add_argument("--ner_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay")
+    parser.add_argument("--lid_wd", type=float, default=WEIGHT_DECAY, help="Set weight decay")
     parser.add_argument("--dropout", type=float, default=DROPOUT_RATE, help="Set dropout rate")
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQUENCE_LENGTH, help="Set max seq length")
     parser.add_argument("--padding", type=str, default=PADDING, help="Set padding style")
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE, help="Set batch size")
-    
-    
-    
     parser.add_argument("--base_model", type=str, default=BASE_MODEL, help="Set base transformer model")
     parser.add_argument("--freeze", type=str, default="unfreeze", help="Freeze or Unfreeze base model")
     parser.add_argument("--warm_restart_epochs", type=int, default=WARM_RESTARTS, help="Set LR Scheduler Warmups")
@@ -307,6 +315,10 @@ if __name__=="__main__":
 
     # Check for reproducibility on differnt GPUs
     # torch.use_deterministic_algorithms(True)
+
+    # main(args)
+    kcrossfold(args)
+    #multidataset(args)
 
     main(args)
     # kcrossfold(args)
